@@ -3,19 +3,18 @@ from models import db, User
 from flask_caching import Cache
 
 app = Flask(__name__)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:postgres@db:5432/postgres'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:password@db:5432/mydb'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 app.config['CACHE_TYPE'] = 'RedisCache'
 app.config['CACHE_REDIS_HOST'] = 'redis'
 app.config['CACHE_REDIS_PORT'] = 6379
+app.config['CACHE_DEFAULT_TIMEOUT'] = 300
 
 db.init_app(app)
 cache = Cache(app)
 
-@app.before_first_request
-def create_tables():
+@app.before_serving
+def init_db():
     db.create_all()
 
 @app.route('/users', methods=['POST'])
