@@ -14,7 +14,6 @@ class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     text = db.Column(db.String(100))
 
-# Создаем таблицы один раз
 with app.app_context():
     try:
         db.create_all()
@@ -31,7 +30,6 @@ def add():
 
 @app.route('/item/<int:id>', methods=['GET'])
 def get(id):
-    # Пытаемся взять из Redis
     try:
         cached = cache.get(f"task:{id}")
         if cached:
@@ -39,10 +37,8 @@ def get(id):
     except:
         pass
 
-    # Идем в Postgres
     task = Task.query.get_or_404(id)
     
-    # Сохраняем в Redis на 30 секунд
     try:
         cache.setex(f"task:{id}", 30, task.text)
     except:
