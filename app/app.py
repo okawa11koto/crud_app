@@ -1,52 +1,54 @@
-from flask import Flask, jsonify, request
-from models import db, User
-from flask_caching import Cache
+import os, redis
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.exc import IntegrityError
 
-def create_app():
-    app = Flask(__name__)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:password@db:5432/mydb'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['CACHE_TYPE'] = 'RedisCache'
-    app.config['CACHE_REDIS_HOST'] = 'redis'
-    app.config['CACHE_REDIS_PORT'] = 6379
-    app.config['CACHE_DEFAULT_TIMEOUT'] = 300
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DB_URL', 'postgresql://user:pass@db/db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-    db.init_app(app)
-    cache = Cache(app)
+db = SQLAlchemy(app)
+cache = redis.Redis(host='redis', port=6379, decode_responses=True)
 
-    @app.before_serving
-    def init_db():
+class Task(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.String(100))
+
+# Создаем таблицы один раз
+with app.app_context():
+    try:
         db.create_all()
+    except Exception:
+        pass
 
-    @app.route('/users', methods=['POST'])
-    def create_user():
-        data = request.json
-        user = User(name=data['name'])
-        db.session.add(user)
-        db.session.commit()
-        cache.clear()
-        return jsonify({'id': user.id, 'name': user.name})
+@app.route('/item', methods=['POST'])
+def add():
+    data = request.json
+    task = Task(text=data['text'])
+    db.session.add(task)
+    db.session.commit()
+    return jsonify({"id": task.id}), 201
 
-    @app.route('/users', methods=['GET'])
-    @cache.cached(timeout=60)
-    def get_users():
-        users = User.query.all()
-        return jsonify([{'id': u.id, 'name': u.name} for u in users])
+@app.route('/item/<int:id>', methods=['GET'])
+def get(id):
+    # Пытаемся взять из Redis
+    try:
+        cached = cache.get(f"task:{id}")
+        if cached:
+            return jsonify({"data": cached, "source": "redis_cache"})
+    except:
+        pass
 
-    @app.route('/users/<int:id>', methods=['PUT'])
-    def update_user(id):
-        user = User.query.get_or_404(id)
-        user.name = request.json['name']
-        db.session.commit()
-        cache.clear()
-        return jsonify({'id': user.id, 'name': user.name})
+    # Идем в Postgres
+    task = Task.query.get_or_404(id)
+    
+    # Сохраняем в Redis на 30 секунд
+    try:
+        cache.setex(f"task:{id}", 30, task.text)
+    except:
+        pass
 
-    @app.route('/users/<int:id>', methods=['DELETE'])
-    def delete_user(id):
-        user = User.query.get_or_404(id)
-        db.session.delete(user)
-        db.session.commit()
-        cache.clear()
-        return '', 204
+    return jsonify({"data": task.text, "source": "postgres_db"})
 
-    return app
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8000)
