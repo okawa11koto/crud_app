@@ -1,11 +1,4 @@
-
-FROM python:3.11-slim
-
+FROM python:3.10-slim
+RUN pip install flask flask-sqlalchemy psycopg2-binary redis gunicorn
 WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY app/ ./app/
-
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app.main:create_app()"]
+COPY app.py .
