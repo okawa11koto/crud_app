@@ -45,6 +45,33 @@ def get(id):
         pass
 
     return jsonify({"data": task.text, "source": "postgres_db"})
+    
+@app.route('/item/<int:id>', methods=['PUT'])
+def update(id):
+    data = request.json
+    task = Task.query.get_or_404(id)
+    task.text = data['text']
+    db.session.commit()
 
+    try:
+        cache.setex(f"task:{id}", 30, task.text)
+    except:
+        pass
+
+    return jsonify({"message": "updated","id": id})
+    
+@app.route('/item/<int:id>', methods=['DELETE'])
+def delete(id):
+    task = Task.query.get_or_404(id)
+    db.session.delete(task)
+    db.session.commit()
+
+    try:
+        cache.delete(f"task:{id}")
+    except:
+        pass
+
+    return jsonify({"message": "deleted","id": id})
+    
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
